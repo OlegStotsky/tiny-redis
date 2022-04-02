@@ -17,16 +17,16 @@ const (
 
 type TinyRedisServer struct {
 	addr   string
-	m      map[string]string
+	db     *DB
 	mu     sync.RWMutex
 	logger *zap.SugaredLogger
 }
 
-func NewTinyRedisServer(addr string, logger *zap.SugaredLogger) *TinyRedisServer {
+func NewTinyRedisServer(addr string, logger *zap.SugaredLogger, db *DB) *TinyRedisServer {
 	return &TinyRedisServer{
 		addr:   addr,
-		m:      make(map[string]string),
 		logger: logger,
+		db:     db,
 	}
 }
 
@@ -46,8 +46,6 @@ func (c *TinyRedisServer) handler(conn redcon.Conn, cmd redcon.Command) {
 		c.setHandler(conn, cmd)
 	case commandGet:
 		c.getHandler(conn, cmd)
-	case commandDel:
-		c.delHandler(conn, cmd)
 	default:
 		conn.WriteError("ERR unknown command '" + string(cmd.Args[0]) + "'")
 	}
@@ -62,7 +60,7 @@ func (c *TinyRedisServer) quitHandler(conn redcon.Conn, cmd redcon.Command) {
 }
 
 func (c *TinyRedisServer) setHandler(conn redcon.Conn, cmd redcon.Command) {
-	c.logger.Debugf("running set with k %v and s %v", cmd.Args[1], cmd.Args[2])
+	c.logger.Debugf("running set with k %v and s %v other args %v", cmd.Args[1], cmd.Args[2], cmd.Args[2:])
 
 	if len(cmd.Args) != 3 {
 		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
@@ -75,7 +73,11 @@ func (c *TinyRedisServer) setHandler(conn redcon.Conn, cmd redcon.Command) {
 	key := cmd.Args[1]
 	val := cmd.Args[2]
 
-	c.m[string(key)] = string(val)
+	err := c.db.Set(string(key), string(val))
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
 
 	conn.WriteString("OK")
 }
@@ -93,34 +95,16 @@ func (c *TinyRedisServer) getHandler(conn redcon.Conn, cmd redcon.Command) {
 
 	key := cmd.Args[1]
 
-	val, ok := c.m[string(key)]
-	if ok {
-		conn.WriteBulk([]byte(val))
-	} else {
-		conn.WriteNull()
-	}
-}
-
-func (c *TinyRedisServer) delHandler(conn redcon.Conn, cmd redcon.Command) {
-	c.logger.Debugf("running del with k %v", cmd.Args[1])
-
-	if len(cmd.Args) != 2 {
-		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
+	val, err := c.db.Get(string(key))
+	if err != nil {
+		conn.WriteError(err.Error())
 		return
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	key := cmd.Args[1]
-
-	_, ok := c.m[string(key)]
-	delete(c.m, string(key))
-
-	if ok {
-		conn.WriteInt(1)
+	if val != "" {
+		conn.WriteBulk([]byte(val))
 	} else {
-		conn.WriteInt(0)
+		conn.WriteNull()
 	}
 }
 
