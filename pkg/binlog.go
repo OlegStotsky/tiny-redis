@@ -44,7 +44,7 @@ func (c *Binlog) Open() error {
 	rdr := bufio.NewReader(c.f)
 	binReader := newBinlogReader(rdr)
 
-	//go c.fsyncer()
+	go c.fsyncer()
 
 	for {
 		magic, err := binReader.ReadUInt32()
@@ -78,10 +78,6 @@ func (c *Binlog) Write(magic uint32, data []byte) error {
 
 	err = c.binWriter.writeBytes(data)
 	if err != nil {
-		return err
-	}
-
-	if err := c.f.Sync(); err != nil {
 		return err
 	}
 
