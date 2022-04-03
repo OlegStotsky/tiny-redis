@@ -7,7 +7,7 @@ import (
 
 type binlogWriter struct {
 	w   *bufio.Writer
-	b32 [32]byte
+	b32 [4]byte
 }
 
 func newBinaryWriter(w *bufio.Writer) *binlogWriter {

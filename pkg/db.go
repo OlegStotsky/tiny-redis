@@ -78,17 +78,17 @@ func serializeSetEvent(key string, value string) []byte {
 	keyLen := len(key)
 	valLen := len(value)
 
-	b := make([]byte, 128+keyLen+valLen)
+	b := make([]byte, 16+keyLen+valLen)
 
-	binary.BigEndian.PutUint64(b[:64], uint64(keyLen))
-	binary.BigEndian.PutUint64(b[64:128], uint64(valLen))
+	binary.BigEndian.PutUint64(b[:8], uint64(keyLen))
+	binary.BigEndian.PutUint64(b[8:16], uint64(valLen))
 
 	for i := 0; i < keyLen; i++ {
-		b[128+i] = key[i]
+		b[16+i] = key[i]
 	}
 
 	for i := 0; i < valLen; i++ {
-		b[128+keyLen+i] = value[i]
+		b[16+keyLen+i] = value[i]
 	}
 
 	return b

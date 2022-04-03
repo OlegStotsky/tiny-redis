@@ -6,6 +6,11 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"os"
+	"time"
+)
+
+const (
+	fsyncTime = 1 * time.Second
 )
 
 type binlogHandler = func(magic uint32, rdr *binlogReader) error
@@ -38,6 +43,8 @@ func (c *Binlog) Open() error {
 
 	rdr := bufio.NewReader(c.f)
 	binReader := newBinlogReader(rdr)
+
+	go c.fsyncer()
 
 	for {
 		magic, err := binReader.ReadUInt32()
@@ -75,6 +82,19 @@ func (c *Binlog) Write(magic uint32, data []byte) error {
 	}
 
 	return nil
+}
+
+func (c *Binlog) fsyncer() {
+	ticker := time.NewTicker(fsyncTime)
+
+	c.logger.Infof("starting fsyncer")
+
+	for range ticker.C {
+		err := c.f.Sync()
+		if err != nil {
+			c.logger.Errorf("error calling fsync: %v", err)
+		}
+	}
 }
 
 func (c *Binlog) Close() error {

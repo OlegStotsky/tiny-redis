@@ -8,8 +8,8 @@ import (
 
 type binlogReader struct {
 	r   *bufio.Reader
-	b32 [32]byte
-	b64 [64]byte
+	b32 [4]byte
+	b64 [8]byte
 }
 
 func newBinlogReader(r *bufio.Reader) *binlogReader {
