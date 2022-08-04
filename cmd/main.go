@@ -16,7 +16,7 @@ func main() {
 
 	flag.Parse()
 
-	logger, err := zap.NewProduction()
+	logger, err := zap.NewDevelopment() // todo add log levels and use production
 	if err != nil {
 		log.Fatal(err.Error())
 	}
