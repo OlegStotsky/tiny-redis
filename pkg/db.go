@@ -7,17 +7,28 @@ import (
 	"go.uber.org/zap"
 	"os"
 	"sync"
+	"time"
 )
 
 const (
 	eventSetKeyMagic = uint32(0x123)
 )
 
+type value struct {
+	value string
+
+	ttl time.Time
+}
+
+func (c *value) expired() bool {
+	return c.ttl != time.Time{} && time.Now().After(c.ttl)
+}
+
 type DB struct {
 	binlog *Binlog
 
 	mu   sync.RWMutex
-	data map[string]string
+	data map[string]*value
 
 	logger *zap.SugaredLogger
 }
@@ -29,7 +40,7 @@ func NewDB(path string) (*DB, error) {
 		}
 	}
 
-	db := DB{data: map[string]string{}}
+	db := DB{data: map[string]*value{}}
 	logger, err := zap.NewProduction()
 	if err != nil {
 		return nil, errCreatingDB(err)
@@ -56,20 +67,35 @@ func (c *DB) Open() error {
 	return nil
 }
 
-func (c *DB) Set(key string, value string) error {
-	c.logger.Debugf("setting key %v to value %v", key, value)
+func (c *DB) Set(key string, val string, setOptions *setOptions) error {
+	logger := c.logger.With(zap.String("key", key), zap.String("val", val), zap.String("options", setOptions.String()))
+
+	logger.Debugf("setting")
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.data[key] = value
-
-	err := c.binlog.Write(eventSetKeyMagic, serializeSetEvent(key, value))
-	if err != nil {
-		return errSettingKey(err, key, value)
+	_, ok := c.data[key]
+	if setOptions.nx && ok {
+		logger.Debug("setting key to val with nx option but key already exists")
+		return nil
+	}
+	if setOptions.xx && !ok {
+		logger.Debug("setting key to val with xx option but key doesn't exists")
+		return nil
 	}
 
-	c.logger.Debugf("set key %s to val %s success", key, value)
+	c.data[key] = &value{
+		value: val,
+		ttl:   setOptions.ttl,
+	}
+
+	err := c.binlog.Write(eventSetKeyMagic, serializeSetEvent(key, val))
+	if err != nil {
+		return errSettingKey(err, key, val)
+	}
+
+	logger.Debugf("set key to val success")
 
 	return nil
 }
@@ -94,13 +120,21 @@ func serializeSetEvent(key string, value string) []byte {
 	return b
 }
 
-func (c *DB) Get(key string) (string, error) {
+func (c *DB) Get(key string) (string, bool) {
 	c.logger.Debugf("getting key %v", key)
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.data[key], nil
+	item, ok := c.data[key]
+	if !ok {
+		return "", false
+	}
+	if item.expired() {
+		return "", false
+	}
+
+	return item.value, true
 }
 
 func (c *DB) Close() error {
@@ -144,7 +178,9 @@ func (c *DB) binlogHandler(magic uint32, rdr *binlogReader) error {
 		keyStr := string(keyBuf)
 		valStr := string(valBuf)
 
-		c.data[keyStr] = valStr
+		c.data[keyStr] = &value{
+			value: valStr,
+		}
 
 		c.logger.Debugf("successfully read key and val %s %s", keyStr, valStr)
 	}
