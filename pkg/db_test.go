@@ -141,3 +141,39 @@ func TestDBSetWithTimeout(t *testing.T) {
 	_, ok = db.Get("foo")
 	require.False(t, ok)
 }
+
+func TestDBDelete(t *testing.T) {
+	f, err := os.CreateTemp("./", "db")
+	defer func() {
+		os.Remove(f.Name())
+	}()
+
+	db, err := NewDB(f.Name())
+	require.NoError(t, err)
+
+	err = db.Open()
+	require.NoError(t, err)
+
+	err = db.Set("foo", "bar", &setOptions{})
+	require.NoError(t, err)
+
+	err, ok := db.Delete("foo")
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	_, ok = db.Get("foo")
+	require.False(t, ok)
+
+	err = db.Close()
+	require.NoError(t, err)
+
+	db, err = NewDB(f.Name())
+	require.NoError(t, err)
+
+	err = db.Open()
+	require.NoError(t, err)
+	defer db.Close()
+
+	_, ok = db.Get("foo")
+	require.False(t, ok)
+}

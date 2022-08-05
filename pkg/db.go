@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	eventSetKeyMagic = uint32(0x123)
+	eventSetKeyMagic    = uint32(0xd1ab8645)
+	eventDeleteKeyMagic = uint32(0x41f782f6)
 )
 
 type value struct {
@@ -70,7 +71,7 @@ func (c *DB) Open() error {
 func (c *DB) Set(key string, val string, setOptions *setOptions) error {
 	logger := c.logger.With(zap.String("key", key), zap.String("val", val), zap.String("options", setOptions.String()))
 
-	logger.Debugf("setting")
+	logger.Debug("setting")
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -90,14 +91,35 @@ func (c *DB) Set(key string, val string, setOptions *setOptions) error {
 		ttl:   setOptions.ttl,
 	}
 
-	err := c.binlog.Write(eventSetKeyMagic, serializeSetEvent(key, val))
-	if err != nil {
+	if err := c.binlog.Write(eventSetKeyMagic, serializeSetEvent(key, val)); err != nil {
 		return errSettingKey(err, key, val)
 	}
 
-	logger.Debugf("set key to val success")
+	logger.Debug("set key to val success")
 
 	return nil
+}
+
+func (c *DB) Delete(key string) (error, bool) {
+	logger := c.logger.With(zap.String("key", key), zap.String("operation", "delete"))
+
+	logger.Debug("deleting")
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if _, ok := c.data[key]; ok {
+		delete(c.data, key)
+
+		if err := c.binlog.Write(eventDeleteKeyMagic, serializeDeleteEvent(key)); err != nil {
+			return errDeletingKey(err, key), false
+		}
+
+		logger.Debug("delete key success")
+		return nil, true
+	}
+
+	return nil, false
 }
 
 func serializeSetEvent(key string, value string) []byte {
@@ -115,6 +137,20 @@ func serializeSetEvent(key string, value string) []byte {
 
 	for i := 0; i < valLen; i++ {
 		b[16+keyLen+i] = value[i]
+	}
+
+	return b
+}
+
+func serializeDeleteEvent(key string) []byte {
+	keyLen := len(key)
+
+	b := make([]byte, 8+keyLen) // 8 bytes for key len folowed by key itself
+
+	binary.BigEndian.PutUint64(b[:8], uint64(keyLen))
+
+	for i := 0; i < keyLen; i++ {
+		b[8+i] = key[i]
 	}
 
 	return b
@@ -155,24 +191,24 @@ func (c *DB) binlogHandler(magic uint32, rdr *binlogReader) error {
 	case eventSetKeyMagic:
 		keyLen, err := rdr.ReadUInt64()
 		if err != nil {
-			return dbBinlogHandlerError(fmt.Errorf("err reading key len : %w", err))
+			return dbBinlogHandlerError(fmt.Errorf("err handling set: err reading key len : %w", err))
 		}
 
 		valLen, err := rdr.ReadUInt64()
 		if err != nil {
-			return dbBinlogHandlerError(fmt.Errorf("err reading val len: %w", err))
+			return dbBinlogHandlerError(fmt.Errorf("err handlign set: err reading val len: %w", err))
 		}
 
 		keyBuf := make([]byte, keyLen)
 		err = rdr.ReadFull(keyBuf)
 		if err != nil {
-			return dbBinlogHandlerError(fmt.Errorf("error reading key: %w", err))
+			return dbBinlogHandlerError(fmt.Errorf("err handling set: error reading key: %w", err))
 		}
 
 		valBuf := make([]byte, valLen)
 		err = rdr.ReadFull(valBuf)
 		if err != nil {
-			return dbBinlogHandlerError(fmt.Errorf("error reading val: %w", err))
+			return dbBinlogHandlerError(fmt.Errorf("err handling set: error reading val: %w", err))
 		}
 
 		keyStr := string(keyBuf)
@@ -182,7 +218,25 @@ func (c *DB) binlogHandler(magic uint32, rdr *binlogReader) error {
 			value: valStr,
 		}
 
-		c.logger.Debugf("successfully read key and val %s %s", keyStr, valStr)
+		c.logger.Debugf("successfully set key and val %s %s", keyStr, valStr)
+
+	case eventDeleteKeyMagic:
+		keyLen, err := rdr.ReadUInt64()
+		if err != nil {
+			return dbBinlogHandlerError(errHandlingDelete(fmt.Errorf("err reading key len: %w", err)))
+		}
+
+		keyBuf := make([]byte, keyLen)
+		err = rdr.ReadFull(keyBuf)
+		if err != nil {
+			return dbBinlogHandlerError(errHandlingDelete(fmt.Errorf("err reading key: %w", err)))
+		}
+
+		keyStr := string(keyBuf)
+
+		delete(c.data, keyStr)
+
+		c.logger.Debug("successfully deleted key", keyStr)
 	}
 
 	return nil
@@ -198,6 +252,14 @@ func errOpeningDB(err error) error {
 
 func errSettingKey(err error, key string, value string) error {
 	return fmt.Errorf("err setting key %s to value %s: %w", key, value, err)
+}
+
+func errDeletingKey(err error, key string) error {
+	return fmt.Errorf("err deleting key %s: %w", key, err)
+}
+
+func errHandlingDelete(err error) error {
+	return fmt.Errorf("err handling delete: %w", err)
 }
 
 func dbBinlogHandlerError(err error) error {

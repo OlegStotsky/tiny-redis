@@ -2,11 +2,11 @@ package pkg
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/tidwall/redcon"
 	"go.uber.org/zap"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -21,11 +21,10 @@ const (
 type TinyRedisServer struct {
 	addr   string
 	db     *DB
-	mu     sync.RWMutex
-	logger *zap.SugaredLogger
+	logger *zap.Logger
 }
 
-func NewTinyRedisServer(addr string, logger *zap.SugaredLogger, db *DB) *TinyRedisServer {
+func NewTinyRedisServer(addr string, logger *zap.Logger, db *DB) *TinyRedisServer {
 	return &TinyRedisServer{
 		addr:   addr,
 		logger: logger,
@@ -34,7 +33,7 @@ func NewTinyRedisServer(addr string, logger *zap.SugaredLogger, db *DB) *TinyRed
 }
 
 func (c *TinyRedisServer) ListenAndServe() error {
-	c.logger.Infof("listening on %v", c.addr)
+	c.logger.Info("listening", zap.String("addr", c.addr))
 
 	return redcon.ListenAndServe(c.addr, c.handler, c.accepter, c.closer)
 }
@@ -49,17 +48,22 @@ func (c *TinyRedisServer) handler(conn redcon.Conn, cmd redcon.Command) {
 		c.setHandler(conn, cmd)
 	case commandGet:
 		c.getHandler(conn, cmd)
+	case commandDel:
+		c.delHandler(conn, cmd)
 	default:
 		conn.WriteError("ERR unknown command '" + string(cmd.Args[0]) + "'")
 	}
 }
 
-func (c *TinyRedisServer) pingHandler(conn redcon.Conn, cmd redcon.Command) {
+func (c *TinyRedisServer) pingHandler(conn redcon.Conn, _ redcon.Command) {
 	conn.WriteString("PONG")
 }
 
-func (c *TinyRedisServer) quitHandler(conn redcon.Conn, cmd redcon.Command) {
+func (c *TinyRedisServer) quitHandler(conn redcon.Conn, _ redcon.Command) {
 	conn.WriteString("OK")
+	if err := conn.Close(); err != nil {
+		c.logger.Debug("error closing connection", zap.Error(err))
+	}
 }
 
 type setOptions struct {
@@ -76,10 +80,13 @@ func (c *setOptions) String() string {
 }
 
 func (c *TinyRedisServer) setHandler(conn redcon.Conn, cmd redcon.Command) {
-	c.logger.Debug("running set with", zap.String("key", string(cmd.Args[1])), zap.String("val", string(cmd.Args[2])))
+	logger := requestLogger(c.logger, "set")
+	logger.Info("running set")
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	if len(cmd.Args) < 3 {
+		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
+		return
+	}
 
 	key := cmd.Args[1]
 	val := cmd.Args[2]
@@ -164,15 +171,13 @@ func errParsingSetCommand(err error) error {
 }
 
 func (c *TinyRedisServer) getHandler(conn redcon.Conn, cmd redcon.Command) {
-	c.logger.Debugf("running get with k %v", cmd.Args[1])
+	logger := requestLogger(c.logger, "get")
+	logger.Info("running get")
 
 	if len(cmd.Args) != 2 {
 		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
 		return
 	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 
 	key := cmd.Args[1]
 
@@ -184,9 +189,53 @@ func (c *TinyRedisServer) getHandler(conn redcon.Conn, cmd redcon.Command) {
 	}
 }
 
-func (c *TinyRedisServer) accepter(_ redcon.Conn) bool {
+func (c *TinyRedisServer) delHandler(conn redcon.Conn, cmd redcon.Command) {
+	logger := requestLogger(c.logger, "del")
+
+	if len(cmd.Args) < 2 {
+		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
+		return
+	}
+
+	cnt := 0
+
+	for _, key := range cmd.Args[1:] {
+		keyStr := string(key)
+		err, ok := c.db.Delete(keyStr)
+		if err != nil {
+			logger.Error("error deleting key", zap.Error(err))
+			conn.WriteError(err.Error())
+			return
+		}
+		if ok {
+			cnt += 1
+		}
+
+		logger.Debug("delete key success", zap.String("key", keyStr))
+	}
+
+	conn.WriteInt(cnt)
+}
+
+func (c *TinyRedisServer) accepter(conn redcon.Conn) bool {
+	c.logger.Debug("accepted connection", zap.String("remote_addr", conn.RemoteAddr()))
 	return true
 }
 
-func (c *TinyRedisServer) closer(_ redcon.Conn, _ error) {
+func (c *TinyRedisServer) closer(conn redcon.Conn, _ error) {
+	c.logger.Debug("closing connection", zap.String("remote_addr", conn.RemoteAddr()))
+}
+
+func getRequestID() string {
+	id, err := uuid.NewUUID()
+	if err != nil {
+		return ""
+	}
+
+	return id.String()
+}
+
+func requestLogger(logger *zap.Logger, operation string) *zap.Logger {
+	requestID := getRequestID()
+	return logger.With(zap.String("operation", operation), zap.String("request_id", requestID))
 }
