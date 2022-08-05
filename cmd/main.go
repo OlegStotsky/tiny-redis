@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path"
 	"syscall"
 )
 
@@ -21,14 +22,23 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
+	dbPath := ""
+
 	if *addrF == "" {
 		logger.Fatal("addr can't be empty")
 	}
 	if *dbPathF == "" {
-		logger.Fatal("db path cant be empty")
+		logger.Warn("db path is empty, defaulting to cur dir")
+		curDir, err := os.Getwd()
+		if err != nil {
+			logger.Fatal("can't get current dir", zap.Error(err))
+		}
+		dbPath = path.Join(curDir, "default.db")
+	} else {
+		dbPath = *dbPathF
 	}
 
-	db, err := pkg.NewDB(*dbPathF)
+	db, err := pkg.NewDB(dbPath)
 	if err != nil {
 		logger.Sugar().Fatalf("error opening db: %v", err)
 	}
@@ -37,7 +47,7 @@ func main() {
 		logger.Sugar().Fatalf("error opening db: %v", err)
 	}
 
-	server := pkg.NewTinyRedisServer(*addrF, logger.Sugar(), db)
+	server := pkg.NewTinyRedisServer(*addrF, logger, db)
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
