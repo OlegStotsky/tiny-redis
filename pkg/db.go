@@ -4,10 +4,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
 	"os"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -36,7 +37,7 @@ type DB struct {
 
 func NewDB(path string) (*DB, error) {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		if _, err := os.Create(path); err != nil {
+		if _, err = os.Create(path); err != nil {
 			return nil, errCreatingDB(err)
 		}
 	}
@@ -100,7 +101,7 @@ func (c *DB) Set(key string, val string, setOptions *setOptions) error {
 	return nil
 }
 
-func (c *DB) Delete(key string) (error, bool) {
+func (c *DB) Delete(key string) (bool, error) {
 	logger := c.logger.With(zap.String("key", key), zap.String("operation", "delete"))
 
 	logger.Debug("deleting")
@@ -112,14 +113,14 @@ func (c *DB) Delete(key string) (error, bool) {
 		delete(c.data, key)
 
 		if err := c.binlog.Write(eventDeleteKeyMagic, serializeDeleteEvent(key)); err != nil {
-			return errDeletingKey(err, key), false
+			return false, errDeletingKey(err, key)
 		}
 
 		logger.Debug("delete key success")
-		return nil, true
+		return true, nil
 	}
 
-	return nil, false
+	return false, nil
 }
 
 func serializeSetEvent(key string, value string) []byte {
@@ -145,7 +146,7 @@ func serializeSetEvent(key string, value string) []byte {
 func serializeDeleteEvent(key string) []byte {
 	keyLen := len(key)
 
-	b := make([]byte, 8+keyLen) // 8 bytes for key len folowed by key itself
+	b := make([]byte, 8+keyLen) // 8 bytes for key len followed by key itself
 
 	binary.BigEndian.PutUint64(b[:8], uint64(keyLen))
 

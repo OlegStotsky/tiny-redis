@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"go-redis/pkg"
-	"go.uber.org/zap"
 	"log"
 	"os"
 	"os/signal"
 	"path"
 	"syscall"
+
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -29,7 +30,7 @@ func main() {
 	}
 	if *dbPathF == "" {
 		logger.Warn("db path is empty, defaulting to cur dir")
-		curDir, err := os.Getwd()
+		curDir, err := os.Getwd() //nolint:govet
 		if err != nil {
 			logger.Fatal("can't get current dir", zap.Error(err))
 		}
@@ -43,14 +44,14 @@ func main() {
 		logger.Sugar().Fatalf("error opening db: %v", err)
 	}
 
-	if err := db.Open(); err != nil {
+	if err = db.Open(); err != nil {
 		logger.Sugar().Fatalf("error opening db: %v", err)
 	}
 
 	server := pkg.NewTinyRedisServer(*addrF, logger, db)
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil {
+		if err = server.ListenAndServe(); err != nil {
 			logger.Sugar().Errorf("error closing server: %v", err)
 		}
 	}()
@@ -62,7 +63,7 @@ func main() {
 
 	logger.Sugar().Infof("shutting down...")
 
-	if err := db.Close(); err != nil {
+	if err = db.Close(); err != nil {
 		logger.Sugar().Errorf("error closing db: %v", err)
 	}
 }

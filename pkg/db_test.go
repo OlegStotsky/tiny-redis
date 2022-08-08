@@ -2,12 +2,13 @@ package pkg
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"math/rand"
 	"os"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDBOpen(t *testing.T) {
@@ -35,7 +36,7 @@ func TestDBSet(t *testing.T) {
 
 	for i := 0; i < 10000; i++ {
 		k, v := rand.Int(), rand.Int()
-		kStr, vStr := strconv.Itoa(k), strconv.Itoa(v)
+		kStr, vStr := strconv.Itoa(k), strconv.Itoa(v) //nolint:revive
 		m[kStr] = vStr
 		err = db.Set(kStr, vStr, &setOptions{})
 		require.NoError(t, err)
@@ -162,7 +163,7 @@ func TestDBDelete(t *testing.T) {
 	err = db.Set("foo", "bar", &setOptions{})
 	require.NoError(t, err)
 
-	err, ok := db.Delete("foo")
+	ok, err := db.Delete("foo")
 	require.NoError(t, err)
 	require.True(t, ok)
 
