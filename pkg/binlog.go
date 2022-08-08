@@ -2,11 +2,13 @@ package pkg
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"go.uber.org/zap"
 	"io"
 	"os"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -50,7 +52,7 @@ func (c *Binlog) Open() error {
 		magic, err := binReader.ReadUInt32()
 		c.logger.Debugf("read magic %0x", magic)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 

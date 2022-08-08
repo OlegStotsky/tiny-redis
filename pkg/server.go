@@ -2,12 +2,13 @@ package pkg
 
 import (
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/tidwall/redcon"
-	"go.uber.org/zap"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/tidwall/redcon"
+	"go.uber.org/zap"
 )
 
 const (
@@ -201,14 +202,14 @@ func (c *TinyRedisServer) delHandler(conn redcon.Conn, cmd redcon.Command) {
 
 	for _, key := range cmd.Args[1:] {
 		keyStr := string(key)
-		err, ok := c.db.Delete(keyStr)
+		ok, err := c.db.Delete(keyStr)
 		if err != nil {
 			logger.Error("error deleting key", zap.Error(err))
 			conn.WriteError(err.Error())
 			return
 		}
 		if ok {
-			cnt += 1
+			cnt++
 		}
 
 		logger.Debug("delete key success", zap.String("key", keyStr))

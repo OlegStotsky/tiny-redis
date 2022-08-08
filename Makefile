@@ -6,3 +6,6 @@ test:
 
 run: build
 	./bin/server
+
+lint:
+	golangci-lint run
