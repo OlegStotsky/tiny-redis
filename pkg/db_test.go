@@ -20,6 +20,7 @@ func TestDBOpen(t *testing.T) {
 
 func TestDBSet(t *testing.T) {
 	f, err := os.CreateTemp("./", "db")
+	require.NoError(t, err)
 	defer func() {
 		os.Remove(f.Name())
 	}()
@@ -59,6 +60,7 @@ func TestDBSet(t *testing.T) {
 
 func TestDBSetWithNX(t *testing.T) {
 	f, err := os.CreateTemp("./", "db")
+	require.NoError(t, err)
 	defer func() {
 		os.Remove(f.Name())
 	}()
@@ -86,6 +88,7 @@ func TestDBSetWithNX(t *testing.T) {
 
 func TestDBSetWithXX(t *testing.T) {
 	f, err := os.CreateTemp("./", "db")
+	require.NoError(t, err)
 	defer func() {
 		os.Remove(f.Name())
 	}()
@@ -99,13 +102,13 @@ func TestDBSetWithXX(t *testing.T) {
 	err = db.Set("foo", "bar", &setOptions{xx: true})
 	require.NoError(t, err)
 
-	val, ok := db.Get("foo")
+	_, ok := db.Get("foo")
 	require.False(t, ok)
 
 	err = db.Set("foo", "bar", &setOptions{})
 	require.NoError(t, err)
 
-	val, ok = db.Get("foo")
+	val, ok := db.Get("foo")
 	require.True(t, ok)
 	require.Equal(t, "bar", val)
 
@@ -119,6 +122,7 @@ func TestDBSetWithXX(t *testing.T) {
 
 func TestDBSetWithTimeout(t *testing.T) {
 	f, err := os.CreateTemp("./", "db")
+	require.NoError(t, err)
 	defer func() {
 		os.Remove(f.Name())
 	}()
@@ -144,6 +148,7 @@ func TestDBSetWithTimeout(t *testing.T) {
 
 func TestDBDelete(t *testing.T) {
 	f, err := os.CreateTemp("./", "db")
+	require.NoError(t, err)
 	defer func() {
 		os.Remove(f.Name())
 	}()
