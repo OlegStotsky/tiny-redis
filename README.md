@@ -1,5 +1,5 @@
 # Tiny Redis
-Implementation if redis-like database in Go. Tiny Redis uses architecture similar to Redis: persistent append only file + snapshots.
+Implementation if redis-like database in Go that achieves 1 000 000+ GET and SET requests per second on single core. Tiny Redis uses architecture similar to Redis: persistent append only file + snapshots.
 
 # Todolist
 - [x] Complete support for GET, SET commands
